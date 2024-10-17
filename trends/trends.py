@@ -1,6 +1,5 @@
 import streamlit as st
 from streamlit_tags import st_tags
-from streamlit.runtime.scriptrunner import get_script_run_ctx, add_script_run_ctx
 
 import pandas as pd
 import numpy as np
@@ -16,6 +15,8 @@ import contextvars
 import logging
 import time
 import json
+import base64
+from pathlib import Path
 
 load_dotenv(".env")
 st.set_page_config(layout="wide")
@@ -82,7 +83,7 @@ async def fetch_tweets(search_words, start_date, end_date, limit=100):
 
 
 
-_streamlit_thread_context = contextvars.ContextVar("streamlit_thread_context")
+# _streamlit_thread_context = contextvars.ContextVar("streamlit_thread_context")
 @st.cache_data(ttl=3600)
 def fetch_word_occurrences_cached(word, start_date, end_date, user_ids):
     logging.info(f"Executing fetch_word_occurrences for word: {word}")
@@ -191,7 +192,6 @@ else:
 # Add a divider for visual separation
 st.divider()
 
-# st.sidebar.header("Search Settings")
 default_words = ["ingroup", "postrat", "tpot"]
 
 
@@ -201,7 +201,6 @@ async def main():
     if not st.session_state.get("supabase"):
         st.session_state.supabase = create_client(url, key)
     
-    _streamlit_thread_context.set(get_script_run_ctx())
     
     selection = None
     col1, col2 = st.columns(2)
@@ -333,14 +332,18 @@ async def main():
                                 for _, tweet in word_tweets.iterrows():
                                     tweet_url = f"https://twitter.com/i/web/status/{tweet['tweet_id']}"
                                     highlighted_text = tweet['full_text'].replace(word, f"<b>{word}</b>")
+                                    avatar_url = tweet.get('avatar_media_url', '')
                                     st.markdown(
                                         f"""
                                         <div class="tweet-container">
-                                            <img src="{tweet['avatar_media_url']}" class="tweet-avatar" alt="Avatar">
+                                            <div class="tweet-avatar">
+                                                <img src="{avatar_url}" style="width:100%;height:100%;border-radius:50%;" onerror="handleImageError(this)">
+                                            </div>
                                             <div class="tweet-content">
                                                 <b>@{tweet['username']}</b> - <a href="{tweet_url}" target="_blank" style="color: inherit; text-decoration: none;">{tweet['created_at']}</a>
                                                 <br>
                                                 {highlighted_text}
+                                            </div>
                                         </div>
                                         """,
                                         unsafe_allow_html=True
@@ -348,6 +351,41 @@ async def main():
                                     st.markdown("---")
                 else:
                     st.write("No search words entered. Please enter words to see related tweets.")
+
+# Add this JavaScript function to the page
+st.markdown("""
+<script>
+function handleImageError(img) {
+    img.style.display = 'none';
+}
+</script>
+""", unsafe_allow_html=True)
+
+# Load the placeholder image
+def get_base64_of_bin_file(bin_file):
+    with open(bin_file, 'rb') as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
+
+placeholder_img = get_base64_of_bin_file('placeholder.jpg')
+
+# Add this JavaScript function and CSS to the page
+st.markdown(f"""
+<style>
+.tweet-avatar {{
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background-image: url(data:image/jpg;base64,{placeholder_img});
+    background-size: cover;
+}}
+</style>
+<script>
+function handleImageError(img) {{
+    img.style.display = 'none';
+}}
+</script>
+""", unsafe_allow_html=True)
 
 if __name__ == "__main__":
     asyncio.run(main())
