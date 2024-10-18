@@ -30,7 +30,6 @@ key: str = (
 )
 
 
-
 def format_tweet_count(count):
     digits = len(str(int(count)))
     if digits > 9:
@@ -51,6 +50,7 @@ def timeit(func):
         duration = end_time - start_time
         logging.info(f"{func.__name__} took {duration:.2f} seconds")
         return result
+
     return wrapper
 
 
@@ -68,26 +68,28 @@ def fetch_tweets_cached(search_query, start_date, end_date, limit=100):
         },
     ).execute()
     df = pd.DataFrame(result.data)
-    df['search_word'] = search_query  # Add this line
-    df['created_at'] = pd.to_datetime(df['created_at'], utc=True)
+    df["search_word"] = search_query  # Add this line
+    df["created_at"] = pd.to_datetime(df["created_at"], utc=True)
     return df
+
 
 @timeit
 async def fetch_tweets(search_words, start_date, end_date, limit=100):
     logging.info(f"Executing fetch_tweets for words: {search_words}")
     results = []
     for word in search_words:
-        result = await asyncio.to_thread(fetch_tweets_cached, word, start_date, end_date, limit)
+        result = await asyncio.to_thread(
+            fetch_tweets_cached, word, start_date, end_date, limit
+        )
         results.append(result)
     return pd.concat(results, ignore_index=True)
-
 
 
 # _streamlit_thread_context = contextvars.ContextVar("streamlit_thread_context")
 @st.cache_data(ttl=3600)
 def fetch_word_occurrences_cached(word, start_date, end_date, user_ids):
     logging.info(f"Executing fetch_word_occurrences for word: {word}")
-    
+
     supabase = create_client(url, key)
     result = supabase.rpc(
         "word_occurrences",
@@ -96,19 +98,23 @@ def fetch_word_occurrences_cached(word, start_date, end_date, user_ids):
             "user_ids": user_ids if len(user_ids) > 0 else None,
         },
     ).execute()
-    
+
     filtered_data = [
-        item for item in result.data 
-        if start_date <= datetime.strptime(item['month'], '%Y-%m').date() <= end_date
+        item
+        for item in result.data
+        if start_date <= datetime.strptime(item["month"], "%Y-%m").date() <= end_date
     ]
-    
+
     return {word: filtered_data}
+
 
 @timeit
 async def fetch_word_occurrences(search_words, start_date, end_date, user_ids):
     logging.info(f"Executing fetch_word_occurrences for words: {search_words}")
     tasks = [
-        asyncio.to_thread(fetch_word_occurrences_cached, word, start_date, end_date, user_ids)
+        asyncio.to_thread(
+            fetch_word_occurrences_cached, word, start_date, end_date, user_ids
+        )
         for word in search_words
     ]
     results = await asyncio.gather(*tasks)
@@ -119,9 +125,9 @@ async def fetch_word_occurrences(search_words, start_date, end_date, user_ids):
 def fetch_monthly_tweet_counts():
     logging.info("Executing fetch_monthly_tweet_counts")
     supabase = create_client(url, key)
-    result = supabase.rpc('get_monthly_tweet_counts').execute()
+    result = supabase.rpc("get_monthly_tweet_counts").execute()
     df = pd.DataFrame(result.data)
-    df['month'] = pd.to_datetime(df['month'], utc=True)
+    df["month"] = pd.to_datetime(df["month"], utc=True)
     return df
 
 
@@ -131,26 +137,31 @@ def plot_word_occurrences(word_occurrences_dict, monthly_tweet_counts, normalize
     for word, result in word_occurrences_dict.items():
         if result:  # Check if result not empty
             df = pd.DataFrame(result)
-            df['month'] = pd.to_datetime(df['month'], utc=True)
-            df['word'] = word
+            df["month"] = pd.to_datetime(df["month"], utc=True)
+            df["word"] = word
             df_list.append(df)
-    
+
     if not df_list:  # If no data, return empty figure
         return go.Figure()
-    
-    df = pd.concat(df_list)
-    df = df.merge(monthly_tweet_counts, on='month', how='left')
-    
-    if normalize:
-        df['normalized_count'] = df['word_count'] / df['tweet_count'] * 1000
-        y_col, y_title = 'normalized_count', 'Occurrences per 1000 tweets'
-    else:
-        y_col, y_title = 'word_count', 'Word Count'
 
-    fig = px.line(df, x='month', y=y_col, color='word', 
-                  title=f'Word Occurrences Over Time {"(normalized)" if normalize else ""}')
-    fig.update_layout(xaxis_title='Month', yaxis_title=y_title)
-    fig.update_traces(mode='lines+markers')  # Add markers for selection
+    df = pd.concat(df_list)
+    df = df.merge(monthly_tweet_counts, on="month", how="left")
+
+    if normalize:
+        df["normalized_count"] = df["word_count"] / df["tweet_count"] * 1000
+        y_col, y_title = "normalized_count", "Occurrences per 1000 tweets"
+    else:
+        y_col, y_title = "word_count", "Word Count"
+
+    fig = px.line(
+        df,
+        x="month",
+        y=y_col,
+        color="word",
+        title=f'Word Occurrences Over Time {"(normalized)" if normalize else ""}',
+    )
+    fig.update_layout(xaxis_title="Month", yaxis_title=y_title)
+    fig.update_traces(mode="lines+markers")  # Add markers for selection
     return fig
 
 
@@ -165,8 +176,15 @@ def fetch_users():
 @st.cache_data(ttl=3600)  # Cache for 1 hour
 def fetch_global_stats():
     supabase = create_client(url, key)
-    result = supabase.table("global_activity_summary").select("*").order('last_updated', desc=True).limit(1).execute()
+    result = (
+        supabase.table("global_activity_summary")
+        .select("*")
+        .order("last_updated", desc=True)
+        .limit(1)
+        .execute()
+    )
     return result.data[0] if result.data else None
+
 
 st.title("Trends in the Community Archive")
 
@@ -174,20 +192,24 @@ st.title("Trends in the Community Archive")
 global_stats = fetch_global_stats()
 
 if global_stats:
-    total_tweets = format_tweet_count(global_stats['total_tweets'])
-    total_accounts = global_stats['total_accounts']
+    total_tweets = format_tweet_count(global_stats["total_tweets"])
+    total_accounts = global_stats["total_accounts"]
 
     # Add explanation and link with dynamic stats
-    st.markdown(f"""
+    st.markdown(
+        f"""
         This app analyzes trends in the [Community Archive](https://www.community-archive.org/), an open database 
         and API for tweet histories. With over {total_tweets} tweets from {total_accounts} accounts, it enables developers to build advanced search tools, AI-powered apps, and other sensemaking projects.
-    """)
+    """
+    )
 else:
-    st.markdown("""
+    st.markdown(
+        """
         This app analyzes trends in the [Community Archive](https://www.community-archive.org/), an open database 
         and API for tweet histories. It enables developers to build advanced search tools, AI-powered apps, 
         and other innovative projects using social media data.
-    """)
+    """
+    )
 
 # Add a divider for visual separation
 st.divider()
@@ -195,16 +217,14 @@ st.divider()
 default_words = ["ingroup", "postrat", "tpot"]
 
 
-
 async def main():
     logging.info("Executing main function")
     if not st.session_state.get("supabase"):
         st.session_state.supabase = create_client(url, key)
-    
-    
+
     selection = None
     col1, col2 = st.columns(2)
-    
+
     with col1:
         search_words = st_tags(
             label="Enter search words",
@@ -225,9 +245,11 @@ async def main():
 
             users = fetch_users()
             user_options = {user["username"]: user["account_id"] for user in users}
-            selected_users = st.multiselect("Select Users", options=list(user_options.keys()))
+            selected_users = st.multiselect(
+                "Select Users", options=list(user_options.keys())
+            )
             user_ids = [user_options[user] for user in selected_users]
-            normalize = st.checkbox('Normalize by monthly tweet count', value=True)
+            normalize = st.checkbox("Normalize by monthly tweet count", value=True)
 
     # Check if query parameters have changed
     query_changed = (
@@ -244,20 +266,26 @@ async def main():
     if query_changed or "tweets_df" not in st.session_state:
         if search_words:
             with st.spinner("Fetching data..."):
-                tweets_task = asyncio.create_task(fetch_tweets(search_words, start_date, end_date))
-                word_occurrences_task = asyncio.create_task(fetch_word_occurrences(search_words, start_date, end_date, user_ids))
-                
+                tweets_task = asyncio.create_task(
+                    fetch_tweets(search_words, start_date, end_date)
+                )
+                word_occurrences_task = asyncio.create_task(
+                    fetch_word_occurrences(search_words, start_date, end_date, user_ids)
+                )
+
                 st.session_state.tweets_df = await tweets_task
                 st.session_state.word_occurrences_dict = await word_occurrences_task
                 st.session_state.monthly_tweet_counts = fetch_monthly_tweet_counts()
 
                 # Update previous query parameters
-                st.session_state.update({
-                    "prev_search_words": search_words,
-                    "prev_start_date": start_date,
-                    "prev_end_date": end_date,
-                    "prev_user_ids": user_ids
-                })
+                st.session_state.update(
+                    {
+                        "prev_search_words": search_words,
+                        "prev_start_date": start_date,
+                        "prev_end_date": end_date,
+                        "prev_user_ids": user_ids,
+                    }
+                )
         else:
             st.session_state.tweets_df = pd.DataFrame()
             st.session_state.word_occurrences_dict = {}
@@ -274,8 +302,16 @@ async def main():
                 fig = plot_word_occurrences(
                     word_occurrences_dict, monthly_tweet_counts, normalize
                 )
-                st.info("Drag horizontally on the graph to filter tweets in the right column.")
-                selection = st.plotly_chart(fig, use_container_width=True, key="word_occurrences", selection_mode='box', on_select="rerun")
+                st.info(
+                    "Drag horizontally on the graph to filter tweets in the right column."
+                )
+                selection = st.plotly_chart(
+                    fig,
+                    use_container_width=True,
+                    key="word_occurrences",
+                    selection_mode="box",
+                    on_select="rerun",
+                )
             else:
                 st.write("No data to display. Please enter search words.")
 
@@ -306,24 +342,35 @@ async def main():
                 .tweet-content a { color: inherit; text-decoration: none; }
                 </style>
                 """,
-                unsafe_allow_html=True
+                unsafe_allow_html=True,
             )
             with tweet_container:
                 if search_words:
                     tabs = st.tabs(search_words)
                     for word, tab in zip(search_words, tabs):
                         with tab:
-                            if selection and selection['selection']['points']:
-                                selected_dates = [pd.to_datetime(point['x']) for point in selection['selection']['points']]
+                            if selection and selection["selection"]["points"]:
+                                selected_dates = [
+                                    pd.to_datetime(point["x"])
+                                    for point in selection["selection"]["points"]
+                                ]
                                 start_date = min(selected_dates).date()
                                 end_date = max(selected_dates).date()
-                                word_tweets = fetch_tweets_cached(word, start_date, end_date)
+                                word_tweets = fetch_tweets_cached(
+                                    word, start_date, end_date
+                                )
                             else:
-                                if 'search_word' in tweets_df.columns:
-                                    word_tweets = tweets_df[tweets_df['search_word'] == word]
+                                if "search_word" in tweets_df.columns:
+                                    word_tweets = tweets_df[
+                                        tweets_df["search_word"] == word
+                                    ]
                                 else:
-                                    st.error("'search_word' column not found in tweets DataFrame. Please check the data fetching process.")
-                                    word_tweets = pd.DataFrame()  # Empty DataFrame as fallback
+                                    st.error(
+                                        "'search_word' column not found in tweets DataFrame. Please check the data fetching process."
+                                    )
+                                    word_tweets = (
+                                        pd.DataFrame()
+                                    )  # Empty DataFrame as fallback
 
                             st.write(f"Showing tweets for '{word}'")
                             if word_tweets.empty:
@@ -331,8 +378,10 @@ async def main():
                             else:
                                 for _, tweet in word_tweets.iterrows():
                                     tweet_url = f"https://twitter.com/i/web/status/{tweet['tweet_id']}"
-                                    highlighted_text = tweet['full_text'].replace(word, f"<b>{word}</b>")
-                                    avatar_url = tweet.get('avatar_media_url', '')
+                                    highlighted_text = tweet["full_text"].replace(
+                                        word, f"<b>{word}</b>"
+                                    )
+                                    avatar_url = tweet.get("avatar_media_url", "")
                                     st.markdown(
                                         f"""
                                         <div class="tweet-container">
@@ -346,46 +395,72 @@ async def main():
                                             </div>
                                         </div>
                                         """,
-                                        unsafe_allow_html=True
+                                        unsafe_allow_html=True,
                                     )
                                     st.markdown("---")
                 else:
-                    st.write("No search words entered. Please enter words to see related tweets.")
+                    st.write(
+                        "No search words entered. Please enter words to see related tweets."
+                    )
+
 
 # Add this JavaScript function to the page
-st.markdown("""
+st.markdown(
+    """
 <script>
 function handleImageError(img) {
     img.style.display = 'none';
 }
 </script>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
+
 
 # Load the placeholder image
 def get_base64_of_bin_file(bin_file):
-    with open(bin_file, 'rb') as f:
-        data = f.read()
-    return base64.b64encode(data).decode()
+    if os.path.exists(bin_file):
+        with open(bin_file, "rb") as f:
+            data = f.read()
+        return base64.b64encode(data).decode()
+    return None
 
-placeholder_img = get_base64_of_bin_file('placeholder.jpg')
+
+placeholder_img = get_base64_of_bin_file("placeholder.jpg")
 
 # Add this JavaScript function and CSS to the page
-st.markdown(f"""
+placeholder_css = f"""
 <style>
 .tweet-avatar {{
     width: 48px;
     height: 48px;
     border-radius: 50%;
+    background-color: #ccc;  /* Fallback color if image is not available */
+}}
+</style>
+"""
+
+if placeholder_img:
+    placeholder_css += f"""
+<style>
+.tweet-avatar {{
     background-image: url(data:image/jpg;base64,{placeholder_img});
     background-size: cover;
 }}
 </style>
+"""
+
+st.markdown(
+    placeholder_css
+    + """
 <script>
-function handleImageError(img) {{
+function handleImageError(img) {
     img.style.display = 'none';
-}}
+}
 </script>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 if __name__ == "__main__":
     asyncio.run(main())
