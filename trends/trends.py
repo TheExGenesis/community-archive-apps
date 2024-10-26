@@ -56,18 +56,7 @@ def timeit(func):
     return wrapper
 
 
-def separate_emoji_and_text(query):
-    emoji_pattern = re.compile(":[a-zA-Z0-9_]+:")
-    emojis = emoji_pattern.findall(query)
-    text = emoji_pattern.sub('', query).strip()
-    return text, emojis
-
-
 def emoji_to_words(text):
-    def replace_emoji(match):
-        emoji_char = match.group(0)
-        return emoji.demojize(emoji_char).replace(':', ' ').strip()
-    
     return emoji.demojize(text, language='alias').replace(':', ' ').strip()
 
 
@@ -515,18 +504,3 @@ function handleImageError(img) {
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
