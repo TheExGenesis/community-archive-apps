@@ -169,8 +169,19 @@ def plot_word_occurrences(word_occurrences_dict, monthly_tweet_counts, normalize
 def fetch_users():
     logging.info("Executing fetch_users")
     supabase = create_client(url, key)
-    result = supabase.table("account").select("account_id", "username").execute()
-    return result.data
+    result = (
+        supabase.table("archive_upload")
+        .select("account!inner(account_id, username)")
+        .execute()
+    )
+    # Restructure the data to match expected format
+    return [
+        {
+            "account_id": item["account"]["account_id"],
+            "username": item["account"]["username"],
+        }
+        for item in result.data
+    ]
 
 
 @st.cache_data(ttl=3600)  # Cache for 1 hour
@@ -214,7 +225,7 @@ else:
 # Add a divider for visual separation
 st.divider()
 
-default_words = ["ingroup", "postrat", "tpot"]
+default_words = ["claude", "chatgpt", "ai"]
 
 
 async def main():
@@ -404,19 +415,6 @@ async def main():
                     )
 
 
-# Add this JavaScript function to the page
-st.markdown(
-    """
-<script>
-function handleImageError(img) {
-    img.style.display = 'none';
-}
-</script>
-""",
-    unsafe_allow_html=True,
-)
-
-
 # Load the placeholder image
 def get_base64_of_bin_file(bin_file):
     if os.path.exists(bin_file):
@@ -451,14 +449,7 @@ if placeholder_img:
 """
 
 st.markdown(
-    placeholder_css
-    + """
-<script>
-function handleImageError(img) {
-    img.style.display = 'none';
-}
-</script>
-""",
+    placeholder_css,
     unsafe_allow_html=True,
 )
 
