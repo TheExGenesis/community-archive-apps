@@ -1,5 +1,6 @@
 import streamlit as st
 from streamlit_tags import st_tags
+import emoji
 
 import pandas as pd
 import numpy as np
@@ -17,6 +18,7 @@ import time
 import json
 import base64
 from pathlib import Path
+import re
 
 load_dotenv(".env")
 st.set_page_config(layout="wide")
@@ -54,22 +56,38 @@ def timeit(func):
     return wrapper
 
 
+def emoji_to_words(text):
+    return emoji.demojize(text, language='alias').replace(':', ' ').strip()
+
+
 @st.cache_data(ttl=3600)
 def fetch_tweets_cached(search_query, start_date, end_date, limit=100):
     logging.info(f"Executing fetch_tweets_cached for query: {search_query}")
     supabase = create_client(url, key)
+    
+    # Convert emoji to words for semantic search
+    semantic_query = emoji_to_words(search_query)
+    
     result = supabase.rpc(
         "search_tweets",
         {
-            "search_query": search_query.replace(" ", "+"),
+            "search_query": semantic_query.replace(" ", "+"),
             "since_date": start_date.isoformat(),
             "until_date": end_date.isoformat(),
             "limit_": limit,
         },
     ).execute()
+    
     df = pd.DataFrame(result.data)
-    df["search_word"] = search_query  # Add this line
-    df["created_at"] = pd.to_datetime(df["created_at"], utc=True)
+    
+    df["search_word"] = search_query
+    
+    if 'created_at' in df.columns:
+        df["created_at"] = pd.to_datetime(df["created_at"], utc=True)
+    else:
+        logging.warning(f"'created_at' column not found in the DataFrame for query: {search_query}")
+        df["created_at"] = pd.NaT
+    
     return df
 
 
@@ -91,10 +109,14 @@ def fetch_word_occurrences_cached(word, start_date, end_date, user_ids):
     logging.info(f"Executing fetch_word_occurrences for word: {word}")
 
     supabase = create_client(url, key)
+    
+    # Convert emoji to words for semantic search
+    semantic_word = emoji_to_words(word)
+    
     result = supabase.rpc(
         "word_occurrences",
         {
-            "search_word": word,
+            "search_word": semantic_word,
             "user_ids": user_ids if len(user_ids) > 0 else None,
         },
     ).execute()
@@ -227,6 +249,24 @@ st.divider()
 
 default_words = ["claude", "chatgpt", "ai"]
 
+def convert_to_emoji(text):
+    return emoji.emojize(text, language='alias')
+
+def st_tags_with_emoji(label, text, value, suggestions, maxtags, key):
+    emoji_suggestions = [emoji.emojize(s, language='alias') for s in suggestions]
+    emoji_value = [emoji.emojize(v, language='alias') for v in value]
+    
+    result = st_tags(
+        label=label,
+        text=text,
+        value=emoji_value,
+        suggestions=emoji_suggestions,
+        maxtags=maxtags,
+        key=key,
+    )
+    
+    return result  # Return the result as-is, including emojis
+
 
 async def main():
     logging.info("Executing main function")
@@ -237,11 +277,11 @@ async def main():
     col1, col2 = st.columns(2)
 
     with col1:
-        search_words = st_tags(
-            label="Enter search words",
-            text="Press enter after each word",
+        search_words = st_tags_with_emoji(
+            label="Enter search words or emojis",
+            text="Press enter after each word or emoji",
             value=default_words,
-            suggestions=["meditation", "mindfulness", "retreat"],
+            suggestions=["meditation", "mindfulness", "retreat", "☕", "❤️", "👍"],
             maxtags=10,
             key="search_words",
         )
