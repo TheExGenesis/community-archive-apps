@@ -29,6 +29,53 @@ key: str = (
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZhYnhtcG9yaXp6cWZsbmZ0YXZzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjIyNDQ5MTIsImV4cCI6MjAzNzgyMDkxMn0.UIEJiUNkLsW28tBHmG-RQDW-I5JNlJLt62CSk9D_qG8"
 )
 
+def calculate_word_correlations(word_occurrences_dict, monthly_tweet_counts, normalize):
+    """
+    Calculate correlations between word occurrences over time.
+    
+    Returns a DataFrame with correlation coefficients and p-values.
+    """
+    import scipy.stats as stats
+    import itertools
+    
+    # Create a DataFrame with all word counts
+    dfs = {}
+    for word, result in word_occurrences_dict.items():
+        if result:
+            df = pd.DataFrame(result)
+            df["month"] = pd.to_datetime(df["month"], utc=True)
+            if normalize:
+                df = df.merge(monthly_tweet_counts, on="month", how="left")
+                df["count"] = df["word_count"] / df["tweet_count"] * 1000
+            else:
+                df["count"] = df["word_count"]
+            dfs[word] = df.set_index("month")["count"]
+    
+    if not dfs:
+        return pd.DataFrame()
+    
+    # Combine all word counts into a single DataFrame
+    combined_df = pd.DataFrame(dfs)
+    
+    # Calculate correlations and p-values
+    results = []
+    words = list(dfs.keys())
+    
+    for word1, word2 in itertools.combinations(words, 2):
+        # Drop any NaN values for the pair
+        pair_df = combined_df[[word1, word2]].dropna()
+        if len(pair_df) > 1:  # Need at least 2 points for correlation
+            corr, p_value = stats.pearsonr(
+                pair_df[word1],
+                pair_df[word2]
+            )
+            results.append({
+                "word_pair": f"{word1} vs {word2}",
+                "correlation": corr,
+                "p_value": p_value
+            })
+    
+    return pd.DataFrame(results)
 
 def format_tweet_count(count):
     digits = len(str(int(count)))
@@ -323,8 +370,28 @@ async def main():
                     selection_mode="box",
                     on_select="rerun",
                 )
-            else:
-                st.write("No data to display. Please enter search words.")
+                # Add correlation analysis here (after st.plotly_chart)
+                correlations_df = calculate_word_correlations(word_occurrences_dict, monthly_tweet_counts, normalize)
+
+                if not correlations_df.empty:
+                    with st.expander("View Correlation Analysis", expanded=True):
+                        st.markdown("### Word Pair Correlations")
+                        st.markdown("Correlation ranges from -1 (perfect negative correlation) to +1 (perfect positive correlation). "
+                                   "P-values < 0.05 indicate statistical significance.")
+                        
+                        # Format and display results in a more compact table
+                        for _, row in correlations_df.iterrows():
+                            corr = row['correlation']
+                            p_val = row['p_value']
+                            significance = "🟢" if p_val < 0.05 else "⚫"
+                            st.markdown(
+                                f"{significance} **{row['word_pair']}**  \n"
+                                f"r = {corr:.3f} (p = {p_val:.3f})"
+                           
+                                )
+
+                else:
+                    st.write("No data to display. Please enter search words.")
 
         with col2:
             st.subheader("Related Tweets")
